@@ -142,6 +142,11 @@
     <span class="brand-sub">CEDEARs · RSI · EMA · MACD</span>
   </div>
   <div class="header-right">
+    <div id="saldo-box" style="font-family:var(--mono);font-size:.72rem;text-align:right;display:none">
+      <span style="color:var(--muted)">disponible</span><br>
+      <span id="saldo-val" style="color:var(--green);font-weight:600"></span>
+      <span id="saldo-usd" style="color:var(--muted);margin-left:8px"></span>
+    </div>
     <span id="last-update">Sin actualizar</span>
     <button id="btn-refresh" onclick="loadAll()">↻ Actualizar</button>
   </div>
@@ -205,13 +210,34 @@ const cache = {};
 // ── Fetch via Netlify Function ──────────────────────────────────────────────
 async function fetchCloses(ticker) {
   if (cache[ticker]) return cache[ticker];
-  const resp = await fetch(`/api/prices?ticker=${encodeURIComponent(ticker)}`);
+  const resp = await fetch(`/api/prices?action=history&ticker=${encodeURIComponent(ticker)}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const json = await resp.json();
   if (json.error) throw new Error(json.error);
   const closes = json.closes.map(c => c.close);
   cache[ticker] = closes;
   return closes;
+}
+
+async function fetchSaldo() {
+  try {
+    const resp = await fetch('/api/prices?action=saldo');
+    if (!resp.ok) return;
+    const json = await resp.json();
+    // Balanz devuelve array con saldos por moneda
+    const pesos = json?.find?.(s => s.idMoneda === 1 || s.Moneda === 'ARS' || s.moneda === '$');
+    const usd   = json?.find?.(s => s.idMoneda === 2 || s.Moneda === 'USD' || s.moneda === 'USD');
+    if (pesos || usd) {
+      document.getElementById('saldo-box').style.display = 'block';
+      if (pesos) document.getElementById('saldo-val').textContent =
+        '$' + (pesos.saldo ?? pesos.Saldo ?? 0).toLocaleString('es-AR', {minimumFractionDigits:0, maximumFractionDigits:0});
+      if (usd) document.getElementById('saldo-usd').textContent =
+        'u$s ' + (usd.saldo ?? usd.Saldo ?? 0).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+  } catch(e) {
+    // Saldo no crítico — si falla, no rompemos el dashboard
+    console.warn('Saldo Balanz no disponible:', e.message);
+  }
 }
 
 // ── Indicadores ─────────────────────────────────────────────────────────────
@@ -414,6 +440,9 @@ async function loadAll() {
   Object.keys(cache).forEach(k => delete cache[k]);
 
   STOCKS.forEach(s => renderSkeleton(s));
+
+  // Cargar saldo de Balanz en paralelo con las cotizaciones
+  fetchSaldo();
 
   const results = await Promise.allSettled(
     STOCKS.map(async (stock) => {
