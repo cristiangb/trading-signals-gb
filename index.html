@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Señales · Portfolio</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --bg:      #0d0f14;
+    --surface: #151820;
+    --border:  #252a36;
+    --text:    #e2e6f0;
+    --muted:   #5a6177;
+    --green:   #00e09e;
+    --yellow:  #f0c040;
+    --red:     #ff4f6e;
+    --blue:    #4d9cff;
+    --mono:    'IBM Plex Mono', monospace;
+    --sans:    'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; padding: 0 0 60px; }
+
+  /* ── Header ── */
+  header {
+    padding: 28px 32px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand-title { font-family: var(--mono); font-size: 1.15rem; font-weight: 600; letter-spacing: .04em; }
+  .brand-sub   { font-size: .75rem; color: var(--muted); font-family: var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+  .header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  #last-update { font-family: var(--mono); font-size: .72rem; color: var(--muted); }
+  #btn-refresh {
+    font-family: var(--mono); font-size: .78rem; font-weight: 600; letter-spacing: .05em;
+    background: transparent; border: 1px solid var(--blue); color: var(--blue);
+    padding: 7px 18px; cursor: pointer; border-radius: 3px; transition: background .15s, color .15s;
+  }
+  #btn-refresh:hover { background: var(--blue); color: var(--bg); }
+  #btn-refresh:disabled { opacity: .45; cursor: default; }
+
+  /* ── Sector pills ── */
+  .sector-nav { padding: 18px 32px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    border: 1px solid var(--border); color: var(--muted); padding: 5px 13px; border-radius: 2px;
+    cursor: pointer; background: transparent; transition: border-color .15s, color .15s;
+  }
+  .pill.active, .pill:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* ── Summary ── */
+  #summary-bar { margin: 20px 32px 0; display: flex; gap: 24px; flex-wrap: wrap; }
+  .sum-item { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: .78rem; }
+  .sum-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .sum-dot.g { background: var(--green); }
+  .sum-dot.y { background: var(--yellow); }
+  .sum-dot.r { background: var(--red); }
+  .sum-count { font-weight: 600; } .sum-label { color: var(--muted); }
+
+  /* ── Warnings ── */
+  #rate-warn, #global-error {
+    margin: 12px 32px 0; padding: 10px 16px;
+    font-size: .72rem; font-family: var(--mono);
+    border-radius: 0 3px 3px 0; display: none; line-height: 1.5;
+  }
+  #rate-warn   { border: 1px solid rgba(240,192,64,.3); border-left: 3px solid var(--yellow); color: var(--yellow); }
+  #global-error{ border: 1px solid rgba(255,79,110,.3); border-left: 3px solid var(--red);    color: var(--red); }
+
+  #progress { font-family: var(--mono); font-size: .72rem; color: var(--muted); margin: 10px 32px 0; min-height: 18px; }
+
+  /* ── Grid ── */
+  #grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 1px; background: var(--border); margin: 16px 32px 0;
+    border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+  }
+
+  /* ── Card ── */
+  .card { background: var(--surface); padding: 20px 22px 18px; position: relative; transition: background .12s; }
+  .card:hover { background: #1a1e2a; }
+  .card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .card.buy::before  { background: var(--green); }
+  .card.hold::before { background: var(--yellow); }
+  .card.sell::before { background: var(--red); }
+  .card.loading::before { background: var(--border); }
+
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+  .ticker  { font-family: var(--mono); font-size: 1.05rem; font-weight: 600; letter-spacing: .06em; }
+  .company { font-size: .72rem; color: var(--muted); margin-top: 2px; font-weight: 300; }
+  .sector-tag {
+    font-family: var(--mono); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--border); padding: 2px 7px; border-radius: 2px; white-space: nowrap;
+  }
+
+  .price-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .price  { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; }
+  .change { font-family: var(--mono); font-size: .82rem; font-weight: 600; }
+  .change.pos { color: var(--green); } .change.neg { color: var(--red); } .change.neu { color: var(--muted); }
+
+  .indicators { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
+  .ind-row { display: flex; justify-content: space-between; align-items: center; font-size: .73rem; }
+  .ind-label { font-family: var(--mono); color: var(--muted); letter-spacing: .04em; }
+  .ind-value { font-family: var(--mono); font-weight: 600; }
+  .ind-value.bull { color: var(--green); }
+  .ind-value.bear { color: var(--red); }
+  .ind-value.neu  { color: var(--yellow); }
+
+  .signal-badge {
+    display: flex; align-items: center; justify-content: center; gap: 7px; padding: 9px;
+    border-radius: 3px; font-family: var(--mono); font-size: .8rem; font-weight: 600;
+    letter-spacing: .1em; text-transform: uppercase;
+  }
+  .signal-badge.buy  { background: rgba(0,224,158,.1);  color: var(--green);  border: 1px solid rgba(0,224,158,.25); }
+  .signal-badge.hold { background: rgba(240,192,64,.08); color: var(--yellow); border: 1px solid rgba(240,192,64,.2); }
+  .signal-badge.sell { background: rgba(255,79,110,.1);  color: var(--red);    border: 1px solid rgba(255,79,110,.25); }
+  .signal-badge.loading { background: var(--border); color: var(--muted); border: 1px solid var(--border); }
+  .signal-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  .reason { font-size: .68rem; color: var(--muted); margin-top: 8px; line-height: 1.5; font-style: italic; min-height: 20px; }
+  .card-error { color: var(--red); font-size: .75rem; font-family: var(--mono); padding: 16px 0; }
+
+  @keyframes shimmer { 0%{opacity:.3} 50%{opacity:.7} 100%{opacity:.3} }
+  .shimmer { animation: shimmer 1.4s ease-in-out infinite; }
+
+  /* ── Disclaimer ── */
+  #disclaimer {
+    margin: 28px 32px 0; padding: 14px 18px;
+    border: 1px solid var(--border); border-left: 3px solid var(--muted);
+    font-size: .7rem; color: var(--muted); line-height: 1.6; border-radius: 0 3px 3px 0;
+  }
+
+  @media (max-width: 600px) {
+    header, .sector-nav, #summary-bar, #grid, #disclaimer, #rate-warn, #global-error, #progress
+      { padding-left: 16px; padding-right: 16px; }
+    #grid { margin-left: 16px; margin-right: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-title">PORTFOLIO · SEÑALES</span>
+    <span class="brand-sub">RSI · MA · MACD</span>
+  </div>
+  <div class="header-right">
+    <span id="last-update">Sin actualizar</span>
+    <button id="btn-refresh" onclick="loadAll()">↻ Actualizar</button>
+  </div>
+</header>
+
+<div class="sector-nav">
+  <button class="pill active" onclick="filterSector('all', this)">Todas</button>
+  <button class="pill" onclick="filterSector('tech', this)">Tecnológicas</button>
+  <button class="pill" onclick="filterSector('consumer', this)">Consumo</button>
+  <button class="pill" onclick="filterSector('space', this)">Espacio</button>
+</div>
+
+<div id="summary-bar">
+  <div class="sum-item"><span class="sum-dot g"></span><span class="sum-count" id="cnt-buy">–</span><span class="sum-label">&nbsp;comprar</span></div>
+  <div class="sum-item"><span class="sum-dot y"></span><span class="sum-count" id="cnt-hold">–</span><span class="sum-label">&nbsp;esperar</span></div>
+  <div class="sum-item"><span class="sum-dot r"></span><span class="sum-count" id="cnt-sell">–</span><span class="sum-label">&nbsp;vender</span></div>
+</div>
+
+<div id="rate-warn">⚠ Límite diario de Alpha Vantage alcanzado (25 req/día). Las acciones restantes no se cargaron. Volvé mañana o upgrades el plan.</div>
+<div id="global-error"></div>
+<div id="progress"></div>
+<div id="grid"></div>
+
+<div id="disclaimer">
+  ⚠ Señales generadas automáticamente con datos de Alpha Vantage (~15 min delay). No constituyen asesoramiento financiero. Usá esto como referencia junto a tu propio criterio.
+</div>
+
+<script>
+const STOCKS = [
+  { ticker: 'GOOGL', company: 'Alphabet / Google',   sector: 'tech'     },
+  { ticker: 'MSFT',  company: 'Microsoft',           sector: 'tech'     },
+  { ticker: 'NVDA',  company: 'NVIDIA',              sector: 'tech'     },
+  { ticker: 'TSLA',  company: 'Tesla',               sector: 'tech'     },
+  { ticker: 'AAPL',  company: 'Apple',               sector: 'tech'     },
+  { ticker: 'AMZN',  company: 'Amazon',              sector: 'tech'     },
+  { ticker: 'PG',    company: 'Procter & Gamble',    sector: 'consumer' },
+  { ticker: 'KO',    company: 'Coca-Cola',           sector: 'consumer' },
+  { ticker: 'SPCX',  company: 'SpaceX',              sector: 'space'    },
+];
+
+// Cache en memoria — no re-fetcha en la misma sesión salvo que el usuario pida refresh explícito
+const cache = {};
+let rateLimitHit = false;
+
+// ── Fetch via Netlify Function ──────────────────────────────────────────────
+async function fetchCloses(ticker) {
+  if (cache[ticker]) return cache[ticker];
+  const resp = await fetch(`/api/prices?ticker=${ticker}`);
+  if (resp.status === 429) { rateLimitHit = true; throw new Error('rate_limit'); }
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const json = await resp.json();
+  if (json.error) throw new Error(json.error);
+  const closes = json.closes.map(c => c.close);
+  cache[ticker] = closes;
+  return closes;
+}
+
+// ── Indicadores ─────────────────────────────────────────────────────────────
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) gains += d; else losses -= d;
+  }
+  return 100 - 100 / (1 + gains / (losses || 0.0001));
+}
+
+function ema(arr, period) {
+  const k = 2 / (period + 1);
+  let e = arr[0];
+  for (let i = 1; i < arr.length; i++) e = arr[i] * k + e * (1 - k);
+  return e;
+}
+
+function calcMACD(closes) {
+  if (closes.length < 35) return { hist: null };
+  const macdSeries = [];
+  for (let i = 25; i < closes.length; i++) {
+    const s = closes.slice(0, i + 1);
+    macdSeries.push(ema(s, 12) - ema(s, 26));
+  }
+  const macdLine   = macdSeries[macdSeries.length - 1];
+  const signalLine = ema(macdSeries, 9);
+  return { hist: macdLine - signalLine };
+}
+
+function calcMA(closes, period) {
+  if (closes.length < period) return null;
+  return closes.slice(-period).reduce((a, b) => a + b, 0) / period;
+}
+
+// ── Señal compuesta ─────────────────────────────────────────────────────────
+function computeSignal(closes) {
+  const price  = closes[closes.length - 1];
+  const prev   = closes[closes.length - 2];
+  const chgPct = (price - prev) / prev * 100;
+  const rsi    = calcRSI(closes);
+  const ma50   = calcMA(closes, 50);
+  const ma200  = calcMA(closes, 200);
+  const { hist } = calcMACD(closes);
+
+  let score = 0;
+  const reasons = [];
+
+  if (rsi !== null) {
+    if      (rsi < 35) { score += 2; reasons.push(`RSI ${rsi.toFixed(0)} — sobrevendido`); }
+    else if (rsi < 45) { score += 1; reasons.push(`RSI ${rsi.toFixed(0)} — zona baja`); }
+    else if (rsi > 70) { score -= 2; reasons.push(`RSI ${rsi.toFixed(0)} — sobrecomprado`); }
+    else if (rsi > 60) { score -= 1; reasons.push(`RSI ${rsi.toFixed(0)} — zona alta`); }
+    else                              reasons.push(`RSI ${rsi.toFixed(0)} — neutral`);
+  }
+  if (ma50 && ma200) {
+    if (ma50 > ma200) { score += 1; reasons.push('MA50 > MA200 — tendencia alcista'); }
+    else              { score -= 1; reasons.push('MA50 < MA200 — tendencia bajista'); }
+  }
+  if (ma50) {
+    if      (price < ma50 * 0.97) { score += 1; reasons.push('Precio bajo MA50 — posible entrada'); }
+    else if (price > ma50 * 1.05) { score -= 1; reasons.push('Precio extendido sobre MA50'); }
+  }
+  if (hist !== null) {
+    if (hist > 0) { score += 1; reasons.push('MACD positivo — momentum alcista'); }
+    else          { score -= 1; reasons.push('MACD negativo — momentum bajista'); }
+  }
+
+  let sig, label;
+  if      (score >= 2)  { sig = 'buy';  label = '🟢 COMPRAR'; }
+  else if (score <= -2) { sig = 'sell'; label = '🔴 VENDER'; }
+  else                  { sig = 'hold'; label = '🟡 ESPERAR'; }
+
+  return { signal: sig, label, price, chgPct, rsi, ma50, ma200, hist, reason: reasons.slice(0, 2).join(' · ') };
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function renderSkeleton(stock) {
+  const card = document.getElementById(`card-${stock.ticker}`);
+  card.className = 'card loading';
+  card.innerHTML = `
+    <div class="card-top">
+      <div><div class="ticker">${stock.ticker}</div><div class="company">${stock.company}</div></div>
+      <span class="sector-tag">${stock.sector}</span>
+    </div>
+    <div class="price-row shimmer"><span class="price" style="color:var(--border)">$———</span></div>
+    <div class="indicators shimmer" style="height:64px;background:var(--border);border-radius:3px"></div>
+    <div class="signal-badge loading shimmer" style="margin-top:16px">Cargando…</div>`;
+}
+
+function renderCard(stock, data, errMsg) {
+  const card = document.getElementById(`card-${stock.ticker}`);
+  if (!data) {
+    card.className = 'card hold';
+    card.innerHTML = `
+      <div class="card-top">
+        <div><div class="ticker">${stock.ticker}</div><div class="company">${stock.company}</div></div>
+        <span class="sector-tag">${stock.sector}</span>
+      </div>
+      <div class="card-error">${errMsg || 'No se pudo cargar datos.'}</div>`;
+    return;
+  }
+
+  const { signal, label, price, chgPct, rsi, ma50, ma200, hist, reason } = data;
+  card.className = `card ${signal}`;
+
+  const chgCls  = chgPct > 0.05 ? 'pos' : chgPct < -0.05 ? 'neg' : 'neu';
+  const rsiCls  = rsi < 40 ? 'bull' : rsi > 65 ? 'bear' : 'neu';
+  const maCls   = (ma50 && ma200 && ma50 > ma200) ? 'bull' : 'bear';
+  const macdCls = hist > 0 ? 'bull' : 'bear';
+
+  card.innerHTML = `
+    <div class="card-top">
+      <div><div class="ticker">${stock.ticker}</div><div class="company">${stock.company}</div></div>
+      <span class="sector-tag">${stock.sector}</span>
+    </div>
+    <div class="price-row">
+      <span class="price">$${price.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</span>
+      <span class="change ${chgCls}">${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%</span>
+    </div>
+    <div class="indicators">
+      <div class="ind-row">
+        <span class="ind-label">RSI(14)</span>
+        <span class="ind-value ${rsiCls}">${rsi !== null ? rsi.toFixed(1) : '–'}</span>
+      </div>
+      <div class="ind-row">
+        <span class="ind-label">MA50 / MA200</span>
+        <span class="ind-value ${maCls}">$${ma50 ? ma50.toFixed(1) : '–'} / $${ma200 ? ma200.toFixed(1) : '–'}</span>
+      </div>
+      <div class="ind-row">
+        <span class="ind-label">MACD histograma</span>
+        <span class="ind-value ${macdCls}">${hist !== null ? (hist > 0 ? '▲ alcista' : '▼ bajista') : '–'}</span>
+      </div>
+    </div>
+    <div class="signal-badge ${signal}"><span class="signal-dot"></span>${label}</div>
+    <div class="reason">${reason}</div>`;
+}
+
+function updateSummary() {
+  const cards = [...document.querySelectorAll('.card')];
+  document.getElementById('cnt-buy').textContent  = cards.filter(c => c.classList.contains('buy')).length;
+  document.getElementById('cnt-hold').textContent = cards.filter(c => c.classList.contains('hold')).length;
+  document.getElementById('cnt-sell').textContent = cards.filter(c => c.classList.contains('sell')).length;
+}
+
+function filterSector(sector, btn) {
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.card').forEach(card => {
+    card.style.display = (sector === 'all' || card.dataset.sector === sector) ? '' : 'none';
+  });
+}
+
+// ── Carga secuencial — respeta 5 req/min de AV free ─────────────────────────
+async function loadAll() {
+  const btn = document.getElementById('btn-refresh');
+  btn.disabled = true;
+  btn.textContent = '↻ Cargando…';
+  rateLimitHit = false;
+  document.getElementById('rate-warn').style.display    = 'none';
+  document.getElementById('global-error').style.display = 'none';
+
+  for (let i = 0; i < STOCKS.length; i++) {
+    const stock = STOCKS[i];
+    if (!cache[stock.ticker]) renderSkeleton(stock);
+
+    document.getElementById('progress').textContent =
+      cache[stock.ticker] ? '' : `Cargando ${stock.ticker} (${i + 1}/${STOCKS.length})…`;
+
+    try {
+      if (!cache[stock.ticker] && i > 0) await sleep(13000); // 5 req/min → 12s entre requests
+      const closes = await fetchCloses(stock.ticker);
+      renderCard(stock, computeSignal(closes));
+    } catch (e) {
+      const msg = rateLimitHit
+        ? 'Límite diario alcanzado (25 req/día). Volvé mañana.'
+        : 'No se pudo cargar datos.';
+      renderCard(stock, null, msg);
+      if (rateLimitHit) break;
+    }
+
+    updateSummary();
+  }
+
+  if (rateLimitHit) document.getElementById('rate-warn').style.display = 'block';
+  document.getElementById('progress').textContent = '';
+
+  const now = new Date();
+  document.getElementById('last-update').textContent =
+    'Actualizado ' + now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
+  btn.disabled = false;
+  btn.textContent = '↻ Actualizar';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Init ────────────────────────────────────────────────────────────────────
+function initGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  STOCKS.forEach(s => {
+    const div = document.createElement('div');
+    div.id = `card-${s.ticker}`;
+    div.dataset.sector = s.sector;
+    div.className = 'card loading';
+    grid.appendChild(div);
+  });
+}
+
+initGrid();
+loadAll();
+</script>
+</body>
+</html>
