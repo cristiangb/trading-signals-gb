@@ -25,7 +25,8 @@ exports.handler = async (event) => {
       const saldo   = await fetchBalanzSaldo(token);
       return ok(saldo);
     } catch (err) {
-      return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+      console.error('ERROR saldo:', err.message, err.stack);
+      return { statusCode: 500, body: JSON.stringify({ error: err.message, stack: err.stack }) };
     }
   }
 
