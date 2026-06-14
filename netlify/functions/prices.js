@@ -90,6 +90,8 @@ async function getBalanzToken() {
     idDispositivo:    '48080ff5-b70b-4abb-8ba4-237982fa73bf'
   });
 
+  console.log('LOGIN RESPONSE:', JSON.stringify(loginRes).slice(0, 500));
+
   const token = loginRes.AccessToken;
   if (!token) throw new Error('Login fallido — sin AccessToken');
 
