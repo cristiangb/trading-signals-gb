@@ -256,6 +256,11 @@ function calcMA(closes, period) {
 
 // ── Señal compuesta ─────────────────────────────────────────────────────────
 function computeSignal(closes) {
+  // Historia insuficiente — menos de 20 días no permite calcular nada confiable
+  if (closes.length < 20) {
+    return { insufficient: true, price: closes[closes.length - 1], chgPct: 0, days: closes.length };
+  }
+
   const price  = closes[closes.length - 1];
   const prev   = closes[closes.length - 2];
   const chgPct = prev ? (price - prev) / prev * 100 : 0;
@@ -335,17 +340,30 @@ function renderSkeleton(stock) {
 
 function renderRow(stock, data, errMsg) {
   const tr = document.getElementById(`row-${stock.display}`);
-  tr.className = `sig-${data ? data.sig : 'hold'}`;
 
   if (!data) {
+    tr.className = 'sig-hold';
     tr.innerHTML = `
-      <td><div class="td-ticker">${stock.display}</div><div class="td-company">${stock.company}</div></td>
+      <td><div class="td-ticker">${stock.display}<span style="font-size:.6rem;color:var(--muted);margin-left:5px">.BA</span></div><div class="td-company">${stock.company}</div></td>
       <td colspan="11" class="td-error">${errMsg || 'Error al cargar'}</td>
       <td></td>`;
     return;
   }
 
+  // Historia insuficiente (ej: IPO reciente)
+  if (data.insufficient) {
+    tr.className = 'sig-hold';
+    tr.innerHTML = `
+      <td><div class="td-ticker">${stock.display}<span style="font-size:.6rem;color:var(--muted);margin-left:5px">.BA</span></div><div class="td-company">${stock.company}</div></td>
+      <td>$${fmt(data.price, 0)}</td>
+      <td colspan="9" style="color:var(--muted);font-size:.68rem">IPO reciente — solo ${data.days} día${data.days !== 1 ? 's' : ''} de historia. Sin señal confiable.</td>
+      <td class="td-signal"><span class="sig-badge hold"><span class="sig-dot"></span>SIN DATOS</span></td>
+      <td></td>`;
+    return;
+  }
+
   const { sig, price, chgPct, rsi, ema12, ema26, macd, sigLine, hist, ma50, ma200, reasons } = data;
+  tr.className = `sig-${sig}`;
   const chgCls  = chgPct > 0.05 ? 'pos' : chgPct < -0.05 ? 'neg' : 'neu';
   const rsiCls  = rsi < 40 ? 'bull' : rsi > 62 ? 'bear' : 'neu';
   const emaCls  = ema12 > ema26 ? 'bull' : 'bear';

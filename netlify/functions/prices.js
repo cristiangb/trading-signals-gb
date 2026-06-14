@@ -24,7 +24,7 @@ exports.handler = async (event) => {
 
 async function fetchYahoo(ticker) {
   const end   = Math.floor(Date.now() / 1000);
-  const start = end - 220 * 86400;
+  const start = end - 300 * 86400;
   const url   = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&period1=${start}&period2=${end}&events=history`;
 
   const json = await fetchJson(url);
@@ -37,7 +37,7 @@ async function fetchYahoo(ticker) {
   return closes
     .map((c, i) => ({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), close: c }))
     .filter(c => c.close != null)
-    .slice(-220);
+    .slice(-300);
 }
 
 function fetchJson(url) {
