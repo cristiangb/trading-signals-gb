@@ -6,41 +6,15 @@ exports.handler = async (event) => {
     return { statusCode: 400, body: JSON.stringify({ error: 'ticker requerido' }) };
   }
 
-  const apiKey = process.env.ALPHAVANTAGE_API_KEY;
-  if (!apiKey) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'API key no configurada en Netlify' }) };
-  }
-
-  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(ticker)}&outputsize=full&apikey=${apiKey}`;
-
   try {
-    const data = await fetchJson(url);
-
-    if (data['Note'] || data['Information']) {
-      return {
-        statusCode: 429,
-        body: JSON.stringify({ error: 'rate_limit', message: data['Note'] || data['Information'] })
-      };
-    }
-
-    const series = data['Time Series (Daily)'];
-    if (!series) {
-      return { statusCode: 404, body: JSON.stringify({ error: 'no_data', ticker }) };
-    }
-
-    // Devolver solo los últimos 220 días de closes ajustados (liviano)
-    const closes = Object.entries(series)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-220)
-      .map(([date, v]) => ({
-        date,
-        close: parseFloat(v['5. adjusted close']),
-        volume: parseInt(v['6. volume'])
-      }));
-
+    const closes = await fetchYahoo(ticker);
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=900' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=900',   // cache 15 min en Netlify CDN
+        'Access-Control-Allow-Origin': '*'
+      },
       body: JSON.stringify({ ticker, closes })
     };
   } catch (err) {
@@ -48,9 +22,33 @@ exports.handler = async (event) => {
   }
 };
 
+async function fetchYahoo(ticker) {
+  const end   = Math.floor(Date.now() / 1000);
+  const start = end - 220 * 86400;
+  const url   = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&period1=${start}&period2=${end}&events=history`;
+
+  const json = await fetchJson(url);
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error('no_data');
+
+  const closes = result.indicators.quote[0].close;
+  const timestamps = result.timestamp;
+
+  return closes
+    .map((c, i) => ({ date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10), close: c }))
+    .filter(c => c.close != null)
+    .slice(-220);
+}
+
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    const opts = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; trading-signals/1.0)',
+        'Accept': 'application/json'
+      }
+    };
+    https.get(url, opts, (res) => {
       let raw = '';
       res.on('data', chunk => raw += chunk);
       res.on('end', () => {

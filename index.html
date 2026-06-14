@@ -165,9 +165,7 @@
   <div class="sum-item"><span class="sum-dot r"></span><span class="sum-count" id="cnt-sell">–</span><span class="sum-label">&nbsp;vender</span></div>
 </div>
 
-<div id="rate-warn">⚠ Límite diario de Alpha Vantage alcanzado (25 req/día). Las acciones restantes no se cargaron. Volvé mañana o upgrades el plan.</div>
 <div id="global-error"></div>
-<div id="progress"></div>
 <div id="grid"></div>
 
 <div id="disclaimer">
@@ -189,7 +187,6 @@ const STOCKS = [
 
 // Cache en memoria — no re-fetcha en la misma sesión salvo que el usuario pida refresh explícito
 const cache = {};
-let rateLimitHit = false;
 
 // ── Fetch via Netlify Function ──────────────────────────────────────────────
 async function fetchCloses(ticker) {
@@ -357,39 +354,34 @@ function filterSector(sector, btn) {
   });
 }
 
-// ── Carga secuencial — respeta 5 req/min de AV free ─────────────────────────
+// ── Carga en paralelo — Yahoo Finance no tiene rate limit ───────────────────
 async function loadAll() {
   const btn = document.getElementById('btn-refresh');
   btn.disabled = true;
   btn.textContent = '↻ Cargando…';
-  rateLimitHit = false;
-  document.getElementById('rate-warn').style.display    = 'none';
   document.getElementById('global-error').style.display = 'none';
 
-  for (let i = 0; i < STOCKS.length; i++) {
-    const stock = STOCKS[i];
-    if (!cache[stock.ticker]) renderSkeleton(stock);
+  // Limpiar cache para forzar datos frescos al hacer Actualizar
+  Object.keys(cache).forEach(k => delete cache[k]);
 
-    document.getElementById('progress').textContent =
-      cache[stock.ticker] ? '' : `Cargando ${stock.ticker} (${i + 1}/${STOCKS.length})…`;
+  STOCKS.forEach(s => renderSkeleton(s));
 
-    try {
-      if (!cache[stock.ticker] && i > 0) await sleep(13000); // 5 req/min → 12s entre requests
+  const results = await Promise.allSettled(
+    STOCKS.map(async (stock) => {
       const closes = await fetchCloses(stock.ticker);
-      renderCard(stock, computeSignal(closes));
-    } catch (e) {
-      const msg = rateLimitHit
-        ? 'Límite diario alcanzado (25 req/día). Volvé mañana.'
-        : 'No se pudo cargar datos.';
-      renderCard(stock, null, msg);
-      if (rateLimitHit) break;
+      return { stock, signal: computeSignal(closes) };
+    })
+  );
+
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      renderCard(r.value.stock, r.value.signal);
+    } else {
+      renderCard(STOCKS[i], null, 'No se pudo cargar datos.');
     }
+  });
 
-    updateSummary();
-  }
-
-  if (rateLimitHit) document.getElementById('rate-warn').style.display = 'block';
-  document.getElementById('progress').textContent = '';
+  updateSummary();
 
   const now = new Date();
   document.getElementById('last-update').textContent =
@@ -398,8 +390,6 @@ async function loadAll() {
   btn.disabled = false;
   btn.textContent = '↻ Actualizar';
 }
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Init ────────────────────────────────────────────────────────────────────
 function initGrid() {
