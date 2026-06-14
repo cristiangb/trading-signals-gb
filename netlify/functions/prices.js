@@ -1,8 +1,32 @@
-const https = require('https');
+const https  = require('https');
+const { getStore } = require('@netlify/blobs');
 
-// Cache del AccessToken en memoria (dura mientras la Function esté caliente)
-let cachedToken = null;
-let tokenExpiry  = 0;
+// ── Token helpers con Netlify Blobs ───────────────────────────────────────────
+async function getStoredToken() {
+  try {
+    const store = getStore('balanz');
+    const raw   = await store.get('session');
+    if (!raw) return null;
+    const { token, expiry } = JSON.parse(raw);
+    if (Date.now() > expiry) return null;
+    return token;
+  } catch { return null; }
+}
+
+async function storeToken(token) {
+  try {
+    const store  = getStore('balanz');
+    const expiry = Date.now() + 50 * 60 * 1000; // 50 minutos
+    await store.set('session', JSON.stringify({ token, expiry }));
+  } catch(e) { console.warn('No se pudo guardar token en Blobs:', e.message); }
+}
+
+async function clearStoredToken() {
+  try {
+    const store = getStore('balanz');
+    await store.delete('session');
+  } catch {}
+}
 
 exports.handler = async (event) => {
   const { ticker, action } = event.queryStringParameters || {};
@@ -55,31 +79,28 @@ function ok(data) {
 }
 
 // ── Balanz auth ───────────────────────────────────────────────────────────────
-const BALANZ = 'clientes.balanz.com';
+const BALANZ    = 'clientes.balanz.com';
 const ID_CUENTA = '250232';
 
 async function getBalanzToken() {
-  const now = Date.now();
-  if (cachedToken && now < tokenExpiry) return cachedToken;
+  // 1. Intentar token guardado
+  const stored = await getStoredToken();
+  if (stored) return stored;
 
   const user = process.env.BALANZ_USER;
   const pass = process.env.BALANZ_PASS;
   if (!user || !pass) throw new Error('BALANZ_USER / BALANZ_PASS no configurados');
 
-  // 1. Init → nonce
+  // 2. Init → nonce
   const initRes = await postJson(BALANZ, '/api/v1/auth/init?avoidAuthRedirect=true', {
-    user,
-    source: 'WebV2',
-    idAplicacion: 1
+    user, source: 'WebV2', idAplicacion: 1
   });
   const nonce = initRes.nonce;
   if (!nonce) throw new Error('No se recibió nonce');
 
-  // 2. Login → AccessToken
+  // 3. Login → AccessToken
   const loginRes = await postJson(BALANZ, '/api/v1/auth/login?avoidAuthRedirect=true', {
-    user,
-    pass,
-    nonce,
+    user, pass, nonce,
     source:           'WebV2',
     sc:               1,
     Nombre:           'Windows 11 Chrome 148.0.0.0',
@@ -90,14 +111,20 @@ async function getBalanzToken() {
     idDispositivo:    '48080ff5-b70b-4abb-8ba4-237982fa73bf'
   });
 
-  console.log('LOGIN RESPONSE:', JSON.stringify(loginRes).slice(0, 500));
+  // Demasiadas sesiones — esperar y reintentar no es viable, informar claro
+  if (loginRes.idError === -3) {
+    throw new Error('Demasiadas sesiones activas en Balanz. Cerrá sesión en la web y esperá 15 min.');
+  }
 
   const token = loginRes.AccessToken;
-  if (!token) throw new Error('Login fallido — sin AccessToken');
+  if (!token) {
+    console.error('LOGIN RESPONSE:', JSON.stringify(loginRes).slice(0, 300));
+    throw new Error('Login fallido: ' + (loginRes.Descripcion || 'sin AccessToken'));
+  }
 
-  // Cachear 50 minutos (las sesiones de Balanz suelen durar 1h)
-  cachedToken = token;
-  tokenExpiry  = now + 50 * 60 * 1000;
+  // 4. Guardar en Blobs para próximas invocaciones
+  await storeToken(token);
+  console.log('Nuevo token Balanz guardado en Blobs');
   return token;
 }
 
