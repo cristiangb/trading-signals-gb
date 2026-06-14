@@ -136,6 +136,9 @@ async function fetchBalanzSaldo(token) {
     token
   );
 
+  console.log('SALDO RAW liquidez:', JSON.stringify(data.liquidez));
+  console.log('SALDO RAW tenenciaActual:', JSON.stringify(data.tenenciaActual));
+
   // Extraer liquidez inmediata en pesos y dólares
   const liquidez = data.liquidez || [];
   const pesos = liquidez.find(l => l.idMoneda === 1);
@@ -143,9 +146,9 @@ async function fetchBalanzSaldo(token) {
   const total = data.tenenciaActual?.[0];
 
   return {
-    pesos:    pesos?.DInm   ?? 0,
-    usd:      usd?.DInm     ?? 0,
-    total:    total?.Total  ?? 0,
+    pesos:    pesos?.DO    ?? pesos?.DInm  ?? 0,
+    usd:      usd?.DO      ?? usd?.DInm    ?? 0,
+    total:    total?.Total ?? 0,
     mep:      total?.CotizacionMEP ?? 0,
     ccl:      total?.CotizacionCCL ?? 0,
   };
