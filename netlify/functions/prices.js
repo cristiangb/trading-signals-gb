@@ -100,10 +100,25 @@ async function getBalanzToken() {
 
 // ── Balanz endpoints ──────────────────────────────────────────────────────────
 async function fetchBalanzSaldo(token) {
-  return getJson(BALANZ,
-    `/api/v1/cuentas/saldo?idCuenta=${ID_CUENTA}&avoidAuthRedirect=true`,
+  const hoy = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const data = await getJson(BALANZ,
+    `/api/v1/estadodecuenta/${ID_CUENTA}?Fecha=${hoy}&ta=1&idMoneda=1&avoidAuthRedirect=true`,
     token
   );
+
+  // Extraer liquidez inmediata en pesos y dólares
+  const liquidez = data.liquidez || [];
+  const pesos = liquidez.find(l => l.idMoneda === 1);
+  const usd   = liquidez.find(l => l.idMoneda === 2);
+  const total = data.tenenciaActual?.[0];
+
+  return {
+    pesos:    pesos?.DInm   ?? 0,
+    usd:      usd?.DInm     ?? 0,
+    total:    total?.Total  ?? 0,
+    mep:      total?.CotizacionMEP ?? 0,
+    ccl:      total?.CotizacionCCL ?? 0,
+  };
 }
 
 async function fetchBalanzCot(token, sym) {

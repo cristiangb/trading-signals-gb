@@ -223,19 +223,20 @@ async function fetchSaldo() {
   try {
     const resp = await fetch('/api/prices?action=saldo');
     if (!resp.ok) return;
-    const json = await resp.json();
-    // Balanz devuelve array con saldos por moneda
-    const pesos = json?.find?.(s => s.idMoneda === 1 || s.Moneda === 'ARS' || s.moneda === '$');
-    const usd   = json?.find?.(s => s.idMoneda === 2 || s.Moneda === 'USD' || s.moneda === 'USD');
-    if (pesos || usd) {
-      document.getElementById('saldo-box').style.display = 'block';
-      if (pesos) document.getElementById('saldo-val').textContent =
-        '$' + (pesos.saldo ?? pesos.Saldo ?? 0).toLocaleString('es-AR', {minimumFractionDigits:0, maximumFractionDigits:0});
-      if (usd) document.getElementById('saldo-usd').textContent =
-        'u$s ' + (usd.saldo ?? usd.Saldo ?? 0).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
-    }
+    const s = await resp.json();
+    if (s.error) return;
+
+    const fmtARS = n => '$' + Math.round(n).toLocaleString('es-AR');
+    const fmtUSD = n => 'u$s ' + n.toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+    document.getElementById('saldo-box').style.display = 'block';
+    document.getElementById('saldo-val').textContent   = fmtARS(s.pesos);
+    document.getElementById('saldo-usd').textContent   = fmtUSD(s.usd);
+
+    // Tooltip con total y MEP
+    document.getElementById('saldo-box').title =
+      `Total: ${fmtARS(s.total)} | MEP: ${fmtARS(s.mep)} | CCL: ${fmtARS(s.ccl)}`;
   } catch(e) {
-    // Saldo no crítico — si falla, no rompemos el dashboard
     console.warn('Saldo Balanz no disponible:', e.message);
   }
 }
