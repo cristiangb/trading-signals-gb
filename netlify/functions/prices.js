@@ -2,31 +2,33 @@ const https  = require('https');
 const { getStore } = require('@netlify/blobs');
 
 // ── Token helpers con Netlify Blobs ───────────────────────────────────────────
+function getBalanzStore() {
+  return getStore({
+    name:   'balanz',
+    siteID: process.env.NETLIFY_SITE_ID,
+    token:  process.env.NETLIFY_TOKEN,
+  });
+}
+
 async function getStoredToken() {
   try {
-    const store = getStore('balanz');
+    const store = getBalanzStore();
     const raw   = await store.get('session');
     if (!raw) return null;
     const { token, expiry } = JSON.parse(raw);
     if (Date.now() > expiry) return null;
     return token;
-  } catch { return null; }
+  } catch(e) { console.warn('getStoredToken error:', e.message); return null; }
 }
 
 async function storeToken(token) {
   try {
-    const store  = getStore('balanz');
-    const expiry = Date.now() + 50 * 60 * 1000; // 50 minutos
+    const store  = getBalanzStore();
+    const expiry = Date.now() + 50 * 60 * 1000;
     await store.set('session', JSON.stringify({ token, expiry }));
-  } catch(e) { console.warn('No se pudo guardar token en Blobs:', e.message); }
+  } catch(e) { console.warn('storeToken error:', e.message); }
 }
 
-async function clearStoredToken() {
-  try {
-    const store = getStore('balanz');
-    await store.delete('session');
-  } catch {}
-}
 
 exports.handler = async (event) => {
   const { ticker, action } = event.queryStringParameters || {};
