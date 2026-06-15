@@ -21,12 +21,23 @@ async function getStoredToken() {
   } catch(e) { console.warn('getStoredToken error:', e.message); return null; }
 }
 
-async function storeToken(token) {
+async function storeToken(token, cookie) {
   try {
     const store  = getBalanzStore();
     const expiry = Date.now() + 50 * 60 * 1000;
-    await store.set('session', JSON.stringify({ token, expiry }));
+    await store.set('session', JSON.stringify({ token, cookie, expiry }));
   } catch(e) { console.warn('storeToken error:', e.message); }
+}
+
+async function getStoredSession() {
+  try {
+    const store = getBalanzStore();
+    const raw   = await store.get('session');
+    if (!raw) return null;
+    const { token, cookie, expiry } = JSON.parse(raw);
+    if (Date.now() > expiry) return null;
+    return { token, cookie };
+  } catch(e) { console.warn('getStoredToken error:', e.message); return null; }
 }
 
 
@@ -47,8 +58,8 @@ exports.handler = async (event) => {
   // ── Ruta: saldo / posición desde Balanz ───────────────────────────────────
   if (action === 'saldo') {
     try {
-      const token   = await getBalanzToken();
-      const saldo   = await fetchBalanzSaldo(token);
+      const session = await getBalanzToken();
+      const saldo   = await fetchBalanzSaldo(session);
       return ok(saldo);
     } catch (err) {
       console.error('ERROR saldo:', err.message, err.stack);
@@ -61,8 +72,8 @@ exports.handler = async (event) => {
     const { sym } = event.queryStringParameters || {};
     if (!sym) return { statusCode: 400, body: JSON.stringify({ error: 'sym requerido' }) };
     try {
-      const token = await getBalanzToken();
-      const cot   = await fetchBalanzCot(token, sym);
+      const session = await getBalanzToken();
+      const cot   = await fetchBalanzCot(session, sym);
       return ok(cot);
     } catch (err) {
       return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
@@ -85,22 +96,27 @@ const BALANZ    = 'clientes.balanz.com';
 const ID_CUENTA = '250232';
 
 async function getBalanzToken() {
-  // 1. Intentar token guardado
-  const stored = await getStoredToken();
+  // 1. Intentar sesión guardada
+  const stored = await getStoredSession();
   if (stored) return stored;
 
   const user = process.env.BALANZ_USER;
   const pass = process.env.BALANZ_PASS;
   if (!user || !pass) throw new Error('BALANZ_USER / BALANZ_PASS no configurados');
 
-  // 2. Init → nonce
-  const initRes = await postJson(BALANZ, '/api/v1/auth/init?avoidAuthRedirect=true', {
-    user, source: 'WebV2', idAplicacion: 1
-  });
+  // 2. GET página de login → obtener cookiesession1
+  const sessionCookie = await fetchSessionCookie();
+  console.log('cookiesession1 obtenida:', sessionCookie?.slice(0, 30));
+
+  // 3. Init → nonce
+  const initRes = await postJson(BALANZ, '/api/v1/auth/init?avoidAuthRedirect=true',
+    { user, source: 'WebV2', idAplicacion: 1 },
+    sessionCookie
+  );
   const nonce = initRes.nonce;
   if (!nonce) throw new Error('No se recibió nonce');
 
-  // 3. Login → AccessToken
+  // 4. Login → AccessToken
   const loginRes = await postJson(BALANZ, '/api/v1/auth/login?avoidAuthRedirect=true', {
     user, pass, nonce,
     source:           'WebV2',
@@ -111,9 +127,8 @@ async function getBalanzToken() {
     VersionAPP:       '2.33.0',
     VersionSO:        '11',
     idDispositivo:    '48080ff5-b70b-4abb-8ba4-237982fa73bf'
-  });
+  }, sessionCookie);
 
-  // Demasiadas sesiones — esperar y reintentar no es viable, informar claro
   if (loginRes.idError === -3) {
     throw new Error('Demasiadas sesiones activas en Balanz. Cerrá sesión en la web y esperá 15 min.');
   }
@@ -124,10 +139,33 @@ async function getBalanzToken() {
     throw new Error('Login fallido: ' + (loginRes.Descripcion || 'sin AccessToken'));
   }
 
-  // 4. Guardar en Blobs para próximas invocaciones
-  await storeToken(token);
-  console.log('Nuevo token Balanz guardado en Blobs');
-  return token;
+  const session = { token, cookie: sessionCookie };
+  await storeToken(token, sessionCookie);
+  console.log('Nuevo token Balanz guardado. Cookie:', sessionCookie?.slice(0, 40));
+  return session;
+}
+
+// Obtener cookiesession1 haciendo GET a la página de login
+function fetchSessionCookie() {
+  return new Promise((resolve, reject) => {
+    https.get({
+      hostname: BALANZ,
+      path: '/auth/login',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+      }
+    }, res => {
+      const cookies = res.headers['set-cookie'] || [];
+      console.log('Login page Set-Cookie:', JSON.stringify(cookies));
+      const session = cookies
+        .map(c => c.split(';')[0])
+        .find(c => c.startsWith('cookiesession1'));
+      // Consumir body
+      res.resume();
+      resolve(session || '');
+    }).on('error', reject);
+  });
 }
 
 // ── Balanz endpoints ──────────────────────────────────────────────────────────
@@ -139,24 +177,25 @@ async function clearStoredToken() {
   } catch(e) { console.warn('clearStoredToken error:', e.message); }
 }
 
-async function fetchBalanzSaldo(token) {
+async function fetchBalanzSaldo(session) {
+  const { token, cookie } = session;
   const hoy  = new Date().toISOString().slice(0,10).replace(/-/g,'');
   let data = await getJson(BALANZ,
     `/api/v1/estadodecuenta/${ID_CUENTA}?Fecha=${hoy}&ta=1&idMoneda=1&avoidAuthRedirect=true`,
-    token
+    token, cookie
   );
 
-  console.log('SALDO FULL:', JSON.stringify(data).slice(0, 800));
+  console.log('SALDO FULL:', JSON.stringify(data).slice(0, 400));
 
   // Sesión expirada — limpiar token y reintentar una vez
   if (data.CodigoError === -1001 || data.Descripcion?.includes('Expirada')) {
     console.log('Sesión expirada — renovando token...');
     await clearStoredToken();
-    const newToken = await getBalanzToken();
+    const newSession = await getBalanzToken();
     const hoy2 = new Date().toISOString().slice(0,10).replace(/-/g,'');
     data = await getJson(BALANZ,
       `/api/v1/estadodecuenta/${ID_CUENTA}?Fecha=${hoy2}&ta=1&idMoneda=1&avoidAuthRedirect=true`,
-      newToken
+      newSession.token, newSession.cookie
     );
     console.log('SALDO RETRY:', JSON.stringify(data).slice(0, 400));
   }
@@ -179,10 +218,11 @@ async function fetchBalanzSaldo(token) {
   };
 }
 
-async function fetchBalanzCot(token, sym) {
+async function fetchBalanzCot(session, sym) {
+  const { token, cookie } = session;
   return getJson(BALANZ,
     `/api/v1/cotizacioninstrumento?plazo=1&idCuenta=${ID_CUENTA}&ticker=${encodeURIComponent(sym)}&avoidAuthRedirect=true`,
-    token
+    token, cookie
   );
 }
 
@@ -205,22 +245,30 @@ async function fetchYahoo(ticker) {
 }
 
 // ── HTTP helpers ──────────────────────────────────────────────────────────────
-function postJson(host, path, body) {
+function postJson(host, path, body, cookie) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
-    const req = https.request({
-      hostname: host, path, method: 'POST',
-      headers: {
-        'Content-Type':   'application/json',
-        'Content-Length': Buffer.byteLength(payload),
-        'User-Agent':     'Mozilla/5.0',
-        'Origin':         'https://clientes.balanz.com',
-        'Referer':        'https://clientes.balanz.com/'
-      }
-    }, res => {
+    const headers = {
+      'Content-Type':   'application/json',
+      'Content-Length': Buffer.byteLength(payload),
+      'User-Agent':     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Origin':         'https://clientes.balanz.com',
+      'Referer':        'https://clientes.balanz.com/',
+      'Accept':         'application/json',
+      'lang':           'es',
+    };
+    if (cookie) headers['Cookie'] = cookie;
+    const req = https.request({ hostname: host, path, method: 'POST', headers }, res => {
       let raw = '';
+      const setCookie = res.headers['set-cookie'] || [];
       res.on('data', c => raw += c);
-      res.on('end', () => { try { resolve(JSON.parse(raw)); } catch(e) { reject(e); } });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(raw);
+          json.__cookies = setCookie;
+          resolve(json);
+        } catch(e) { reject(e); }
+      });
     });
     req.on('error', reject);
     req.write(payload);
@@ -228,16 +276,18 @@ function postJson(host, path, body) {
   });
 }
 
-function getJson(host, path, token) {
+function getJson(host, path, token, cookie) {
+  console.log('GET', path, 'token:', token?.slice(0,8) + '...');
   return new Promise((resolve, reject) => {
-    https.get({
-      hostname: host, path,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'User-Agent':    'Mozilla/5.0',
-        'Origin':        'https://clientes.balanz.com'
-      }
-    }, res => {
+    const headers = {
+      'Authorization': token,   // sin Bearer
+      'Content-Type':  'application/json',
+      'User-Agent':    'Mozilla/5.0',
+      'Origin':        'https://clientes.balanz.com',
+      'Accept':        'application/json',
+    };
+    if (cookie) headers['Cookie'] = cookie;
+    https.get({ hostname: host, path, headers }, res => {
       let raw = '';
       res.on('data', c => raw += c);
       res.on('end', () => { try { resolve(JSON.parse(raw)); } catch(e) { reject(e); } });
