@@ -131,14 +131,36 @@ async function getBalanzToken() {
 }
 
 // ── Balanz endpoints ──────────────────────────────────────────────────────────
+async function clearStoredToken() {
+  try {
+    const store = getBalanzStore();
+    await store.delete('session');
+    console.log('Token Blobs eliminado');
+  } catch(e) { console.warn('clearStoredToken error:', e.message); }
+}
+
 async function fetchBalanzSaldo(token) {
-  const hoy = new Date().toISOString().slice(0,10).replace(/-/g,'');
-  const data = await getJson(BALANZ,
+  const hoy  = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  let data = await getJson(BALANZ,
     `/api/v1/estadodecuenta/${ID_CUENTA}?Fecha=${hoy}&ta=1&idMoneda=1&avoidAuthRedirect=true`,
     token
   );
 
   console.log('SALDO FULL:', JSON.stringify(data).slice(0, 800));
+
+  // Sesión expirada — limpiar token y reintentar una vez
+  if (data.CodigoError === -1001 || data.Descripcion?.includes('Expirada')) {
+    console.log('Sesión expirada — renovando token...');
+    await clearStoredToken();
+    const newToken = await getBalanzToken();
+    const hoy2 = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    data = await getJson(BALANZ,
+      `/api/v1/estadodecuenta/${ID_CUENTA}?Fecha=${hoy2}&ta=1&idMoneda=1&avoidAuthRedirect=true`,
+      newToken
+    );
+    console.log('SALDO RETRY:', JSON.stringify(data).slice(0, 400));
+  }
+
   console.log('SALDO RAW liquidez:', JSON.stringify(data.liquidez));
   console.log('SALDO RAW tenenciaActual:', JSON.stringify(data.tenenciaActual));
 
