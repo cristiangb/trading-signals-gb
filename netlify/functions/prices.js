@@ -100,23 +100,21 @@ async function getBalanzToken() {
   const stored = await getStoredSession();
   if (stored) return stored;
 
-  const user = process.env.BALANZ_USER;
-  const pass = process.env.BALANZ_PASS;
+  const user   = process.env.BALANZ_USER;
+  const pass   = process.env.BALANZ_PASS;
+  const cookie = process.env.BALANZ_SESSION_COOKIE || '';
   if (!user || !pass) throw new Error('BALANZ_USER / BALANZ_PASS no configurados');
 
-  // 2. GET página de login → obtener cookiesession1
-  const sessionCookie = await fetchSessionCookie();
-  console.log('cookiesession1 obtenida:', sessionCookie?.slice(0, 30));
+  console.log('Cookie de env:', cookie.slice(0, 30));
 
-  // 3. Init → nonce
+  // 2. Init → nonce
   const initRes = await postJson(BALANZ, '/api/v1/auth/init?avoidAuthRedirect=true',
-    { user, source: 'WebV2', idAplicacion: 1 },
-    sessionCookie
+    { user, source: 'WebV2', idAplicacion: 1 }, cookie
   );
   const nonce = initRes.nonce;
   if (!nonce) throw new Error('No se recibió nonce');
 
-  // 4. Login → AccessToken
+  // 3. Login → AccessToken
   const loginRes = await postJson(BALANZ, '/api/v1/auth/login?avoidAuthRedirect=true', {
     user, pass, nonce,
     source:           'WebV2',
@@ -127,7 +125,7 @@ async function getBalanzToken() {
     VersionAPP:       '2.33.0',
     VersionSO:        '11',
     idDispositivo:    '48080ff5-b70b-4abb-8ba4-237982fa73bf'
-  }, sessionCookie);
+  }, cookie);
 
   if (loginRes.idError === -3) {
     throw new Error('Demasiadas sesiones activas en Balanz. Cerrá sesión en la web y esperá 15 min.');
@@ -139,33 +137,10 @@ async function getBalanzToken() {
     throw new Error('Login fallido: ' + (loginRes.Descripcion || 'sin AccessToken'));
   }
 
-  const session = { token, cookie: sessionCookie };
-  await storeToken(token, sessionCookie);
-  console.log('Nuevo token Balanz guardado. Cookie:', sessionCookie?.slice(0, 40));
+  const session = { token, cookie };
+  await storeToken(token, cookie);
+  console.log('Nuevo token guardado. Cookie:', cookie.slice(0, 40));
   return session;
-}
-
-// Obtener cookiesession1 haciendo GET a la página de login
-function fetchSessionCookie() {
-  return new Promise((resolve, reject) => {
-    https.get({
-      hostname: BALANZ,
-      path: '/auth/login',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-      }
-    }, res => {
-      const cookies = res.headers['set-cookie'] || [];
-      console.log('Login page Set-Cookie:', JSON.stringify(cookies));
-      const session = cookies
-        .map(c => c.split(';')[0])
-        .find(c => c.startsWith('cookiesession1'));
-      // Consumir body
-      res.resume();
-      resolve(session || '');
-    }).on('error', reject);
-  });
 }
 
 // ── Balanz endpoints ──────────────────────────────────────────────────────────
@@ -185,8 +160,6 @@ async function fetchBalanzSaldo(session) {
     token, cookie
   );
 
-  console.log('SALDO FULL:', JSON.stringify(data).slice(0, 400));
-
   // Sesión expirada — limpiar token y reintentar una vez
   if (data.CodigoError === -1001 || data.Descripcion?.includes('Expirada')) {
     console.log('Sesión expirada — renovando token...');
@@ -200,8 +173,6 @@ async function fetchBalanzSaldo(session) {
     console.log('SALDO RETRY:', JSON.stringify(data).slice(0, 400));
   }
 
-  console.log('SALDO RAW liquidez:', JSON.stringify(data.liquidez));
-  console.log('SALDO RAW tenenciaActual:', JSON.stringify(data.tenenciaActual));
 
   // Extraer liquidez inmediata en pesos y dólares
   const liquidez = data.liquidez || [];
