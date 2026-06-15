@@ -138,6 +138,7 @@ async function fetchBalanzSaldo(token) {
     token
   );
 
+  console.log('SALDO FULL:', JSON.stringify(data).slice(0, 800));
   console.log('SALDO RAW liquidez:', JSON.stringify(data.liquidez));
   console.log('SALDO RAW tenenciaActual:', JSON.stringify(data.tenenciaActual));
 
